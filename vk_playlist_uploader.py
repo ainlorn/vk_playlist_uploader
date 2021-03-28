@@ -251,6 +251,9 @@ def upload_track(token, track):
     r = vk_request('audio.save', token, '5.130', server=r['server'], audio=r['audio'],
                    hash=r['hash'])
     if 'error' in r:
+        if r['error']['error_code'] == 270:
+            print('WARNING:', track, 'was removed by copyright holder!')
+            return False
         print(r)
         raise Exception('Error saving file')
 
@@ -276,10 +279,18 @@ def upload_tracks(token, tracks, cover):
     else:
         owner = token['id']
 
+    desc = ''
+
     audios = []
     for track in tracks:
         print('Uploading', track)
-        audios.append(upload_track(token, track))
+        audio = upload_track(token, track)
+        if audio:
+            audios.append(audio)
+        else:
+            if not desc:
+                desc = 'Missing tracks:\n'
+            desc += f'{track.artist} - {track.title}\n'
 
     t = tracks[len(tracks) - 1]
     album_title = f'{t.album_artist} - {t.album}'
@@ -287,7 +298,8 @@ def upload_tracks(token, tracks, cover):
     audios.reverse()
     print('Creating playlist', album_title)
     r = vk_request('execute.savePlaylist', token, '5.149', dialog_id=0, playlist_id=0, title=album_title,
-                   audio_ids_to_add=','.join(audios), no_discover=HIDDEN, owner_id=owner, func_v=6, save_cover=0)
+                   description=desc, audio_ids_to_add=','.join(audios), no_discover=HIDDEN, owner_id=owner, func_v=6,
+                   save_cover=0)
     if 'error' in r:
         print(r)
         raise Exception('Error creating playlist')
