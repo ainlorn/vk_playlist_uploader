@@ -205,7 +205,7 @@ def process_dir(path):
         print(path, 'is not a directory')
         return
     tracks = []
-    cover = ...
+    cover = None
     dir_name = os.path.basename(path)
 
     for file in os.listdir(path):
