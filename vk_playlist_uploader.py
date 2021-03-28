@@ -6,6 +6,7 @@ import argparse
 import itertools
 import json
 import os
+import time
 import hashlib
 
 import requests
@@ -19,6 +20,7 @@ CONV_FORMATS = ['.flac']
 COVER_FILENAMES = ['cover', 'jacket', 'folder']
 IMG_FORMATS = ['.jpg', '.jpeg', '.png']
 COVER_FILES = list([''.join(i) for i in itertools.product(COVER_FILENAMES, IMG_FORMATS)])
+CAPTCHA_SLEEP = 120
 
 script_dir = os.path.dirname(__file__)
 CREDENTIALS_FILE = f'{script_dir}/creds.json'
@@ -162,8 +164,13 @@ def vk_request(method, token, v, params=None, **kwargs):
     if params:
         _params.extend(params)
 
-    return _sess.post(BASE_URL + method,
-                      params=_params).json()
+    _json = _sess.post(BASE_URL + method,
+                       params=_params).json()
+    if 'error' in _json and _json['error']['error_code'] == 14:
+        print('WARNING: Captcha needed, waiting', CAPTCHA_SLEEP, 'secs...')
+        time.sleep(CAPTCHA_SLEEP)
+        return vk_request(method, token, v, params, **kwargs)
+    return _json
 
 
 def conv_to_mp3(old_file, new_file):
