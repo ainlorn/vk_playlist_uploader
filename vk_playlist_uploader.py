@@ -49,6 +49,10 @@ class Track:
         self.album = album
         self.album_artist = album_artist
         self.orig_path = path
+        if track_num is None:
+            self.track_num = 0
+        if disc_num is None:
+            self.disc_num = 0
         if artist is None:
             self.artist = 'Unknown artist'
         if title is None:
