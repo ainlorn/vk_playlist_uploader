@@ -168,7 +168,7 @@ def _post_wrapper(*args, **kwargs):
         try:
             r = _sess.post(*args, **kwargs)
             return r
-        except ConnectionError:
+        except requests.exceptions.ConnectionError:
             if retries == 0:
                 raise
             print('ERROR: Connection error, retrying in', c_sleep, 'seconds!')
