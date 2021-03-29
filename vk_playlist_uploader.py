@@ -19,12 +19,13 @@ CONV_FORMATS = ['.flac']
 COVER_FILENAMES = ['cover', 'jacket', 'folder']
 IMG_FORMATS = ['.jpg', '.jpeg', '.png']
 COVER_FILES = list([''.join(i) for i in itertools.product(COVER_FILENAMES, IMG_FORMATS)])
-CAPTCHA_SLEEP = 120
+
+START_CAPTCHA_SLEEP = 90
+MAX_CAPTCHA_SLEEP = 3600
 
 _script_dir = os.path.dirname(__file__)
 CREDENTIALS_FILE = f'{_script_dir}/creds.json'
 TOKEN_FILE = f'{_script_dir}/token.json'
-RECURSIVE = False
 
 _sess = requests.session()
 _sess.headers.update(
@@ -183,13 +184,17 @@ def vk_request(method, token, v, params=None, **kwargs):
     if params:
         _params.extend(params)
 
-    _json = _post_wrapper(BASE_URL + method,
-                          params=_params).json()
-    if 'error' in _json and _json['error']['error_code'] == 14:
-        print('WARNING: Captcha needed, waiting', CAPTCHA_SLEEP, 'secs...')
-        time.sleep(CAPTCHA_SLEEP)
-        return vk_request(method, token, v, params, **kwargs)
-    return _json
+    c_sleep = START_CAPTCHA_SLEEP
+
+    while True:
+        _json = _post_wrapper(BASE_URL + method,
+                              params=_params).json()
+        if 'error' in _json and _json['error']['error_code'] == 14:
+            print('WARNING: Captcha needed, waiting', c_sleep, 'secs...')
+            time.sleep(c_sleep)
+            c_sleep = min(c_sleep * 2, MAX_CAPTCHA_SLEEP)
+        else:
+            return _json
 
 
 def conv_to_mp3(old_file, new_file):
