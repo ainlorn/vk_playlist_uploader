@@ -173,6 +173,7 @@ def _post_wrapper(*args, **kwargs):
             if retries == 0:
                 raise
             print('ERROR: Connection error, retrying in', c_sleep, 'seconds!')
+            time.sleep(c_sleep)
             c_sleep = min(c_sleep * 2, max_sleep)
             retries -= 1
 
