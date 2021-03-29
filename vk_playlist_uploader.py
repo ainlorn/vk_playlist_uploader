@@ -33,8 +33,6 @@ _sess = requests.session()
 _sess.headers.update(
     {'User-Agent': 'VKAndroidApp/6.30-7444 (Android 7.1.1; SDK 25; arm64-v8a; Xiaomi MI8; ru; 1920x1080)',
      'X-VK-Android-Client': 'new'})
-_sess.mount('http://', HTTPAdapter(max_retries=3))
-_sess.mount('https://', HTTPAdapter(max_retries=3))
 
 _remove = []
 
@@ -161,6 +159,23 @@ def check_token(token):
         return False
 
 
+def _post_wrapper(*args, **kwargs):
+    retries = 10
+    max_sleep = 32
+    c_sleep = 1
+
+    while True:
+        try:
+            r = _sess.post(*args, **kwargs)
+            return r
+        except ConnectionError:
+            if retries == 0:
+                raise
+            print('ERROR: Connection error, retrying in', c_sleep, 'seconds!')
+            c_sleep = min(c_sleep * 2, max_sleep)
+            retries -= 1
+
+
 def vk_request(method, token, v, params=None, **kwargs):
     _params = [('access_token', token['token']), ('v', v)]
     for i in kwargs:
@@ -168,8 +183,8 @@ def vk_request(method, token, v, params=None, **kwargs):
     if params:
         _params.extend(params)
 
-    _json = _sess.post(BASE_URL + method,
-                       params=_params).json()
+    _json = _post_wrapper(BASE_URL + method,
+                          params=_params).json()
     if 'error' in _json and _json['error']['error_code'] == 14:
         print('WARNING: Captcha needed, waiting', CAPTCHA_SLEEP, 'secs...')
         time.sleep(CAPTCHA_SLEEP)
@@ -244,7 +259,7 @@ def process_dir(path):
 
 
 def vk_upload_file(url, file, field_name):
-    return _sess.post(url, files={field_name: open(file, 'rb')}).json()
+    return _post_wrapper(url, files={field_name: open(file, 'rb')}).json()
 
 
 def upload_track(token, track):
