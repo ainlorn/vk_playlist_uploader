@@ -12,7 +12,6 @@ import hashlib
 import requests
 import eyed3
 from vkaudiotoken import get_vk_official_token
-from requests.adapters import HTTPAdapter
 
 BASE_URL = 'https://api.vk.com/method/'
 FFMPEG_EXECUTABLE = 'ffmpeg'
@@ -22,11 +21,9 @@ IMG_FORMATS = ['.jpg', '.jpeg', '.png']
 COVER_FILES = list([''.join(i) for i in itertools.product(COVER_FILENAMES, IMG_FORMATS)])
 CAPTCHA_SLEEP = 120
 
-script_dir = os.path.dirname(__file__)
-CREDENTIALS_FILE = f'{script_dir}/creds.json'
-TOKEN_FILE = f'{script_dir}/token.json'
-GROUP_ID = None
-HIDDEN = 0
+_script_dir = os.path.dirname(__file__)
+CREDENTIALS_FILE = f'{_script_dir}/creds.json'
+TOKEN_FILE = f'{_script_dir}/token.json'
 RECURSIVE = False
 
 _sess = requests.session()
@@ -140,11 +137,14 @@ def get_token(login, password):
     _id = check_token(token)
     if _id:
         token['id'] = _id
-        with open(TOKEN_FILE, 'w') as f:
-            json.dump({'hash': cred_hash(login, password), 'token': token}, f)
-        return token
+        return token, cred_hash(login, password)
     else:
         raise Exception('Token check failed while acquiring new token')
+
+
+def save_token(token_file, token, _hash):
+    with open(token_file, 'w') as f:
+        json.dump({'hash': _hash, 'token': token}, f)
 
 
 def cred_hash(login, password):
@@ -216,7 +216,7 @@ def process_mp3(path):
     return Track(path, artist, title, disc_num, track_num, album, album_artist)
 
 
-def process_dir(path):
+def process_dir(path, recursive=False):
     if not os.path.exists(path):
         print(path, 'does not exist')
         return
@@ -230,8 +230,8 @@ def process_dir(path):
     for file in os.listdir(path):
         _spl = os.path.splitext(file)
         filepath = os.path.join(path, file)
-        if os.path.isdir(filepath) and RECURSIVE:
-            tracks.extend(process_dir(filepath)[0])
+        if os.path.isdir(filepath) and recursive:
+            tracks.extend(process_dir(filepath, True)[0])
         elif len(_spl) > 1:
             if _spl[1] == '.mp3':
                 tracks.append(process_mp3(filepath))
@@ -262,7 +262,7 @@ def vk_upload_file(url, file, field_name):
     return _post_wrapper(url, files={field_name: open(file, 'rb')}).json()
 
 
-def upload_track(token, track):
+def upload_track(token, track, group_id=None):
     r = vk_request('audio.getUploadServer', token, '5.130')
     if 'error' in r:
         print(r)
@@ -286,8 +286,8 @@ def upload_track(token, track):
     owner_id = r['response']['owner_id']
     _id = r['response']['id']
 
-    if GROUP_ID:
-        r = vk_request('audio.add', token, '5.130', owner_id=owner_id, audio_id=_id, group_id=GROUP_ID[1:])
+    if group_id:
+        r = vk_request('audio.add', token, '5.130', owner_id=owner_id, audio_id=_id, group_id=group_id[1:])
         if 'error' in r:
             print(r)
             raise Exception('Error saving file to group')
@@ -295,13 +295,13 @@ def upload_track(token, track):
 
         r = vk_request('execute', token, '5.130', code=f"API.audio.delete({{audio_id:{_id},owner_id:{owner_id}}});")
 
-        return f'{GROUP_ID}_{new_id}'
+        return f'{group_id}_{new_id}'
     return f'{token["id"]}_{_id}'
 
 
-def upload_tracks(token, tracks, cover):
-    if GROUP_ID:
-        owner = GROUP_ID
+def upload_tracks(token, tracks, cover, group_id=None, hidden=0):
+    if group_id:
+        owner = group_id
     else:
         owner = token['id']
 
@@ -310,7 +310,7 @@ def upload_tracks(token, tracks, cover):
     audios = []
     for track in tracks:
         print('Uploading', track)
-        audio = upload_track(token, track)
+        audio = upload_track(token, track, group_id)
         if audio:
             audios.append(audio)
         else:
@@ -324,7 +324,7 @@ def upload_tracks(token, tracks, cover):
     audios.reverse()
     print('Creating playlist', album_title)
     r = vk_request('execute.savePlaylist', token, '5.149', dialog_id=0, playlist_id=0, title=album_title,
-                   description=desc, audio_ids_to_add=','.join(audios), no_discover=HIDDEN, owner_id=owner, func_v=6,
+                   description=desc, audio_ids_to_add=','.join(audios), no_discover=hidden, owner_id=owner, func_v=6,
                    save_cover=0)
     if 'error' in r:
         print(r)
@@ -352,7 +352,7 @@ def upload_tracks(token, tracks, cover):
             raise Exception('Error setting album cover')
 
 
-def main(directories):
+def main(directories, group_id, hidden, recursive):
     if not os.path.exists(CREDENTIALS_FILE):
         print('Credentials file does not exist.')
         return
@@ -370,24 +370,27 @@ def main(directories):
 
         if _hash != _token['hash']:
             print('Credentials changed, getting new token...')
-            token = get_token(login, password)
+            token, _hash = get_token(login, password)
+            save_token(TOKEN_FILE, token, _hash)
         elif check_token(_token['token']):
             token = _token['token']
         else:
             print('Token check failed, getting new token...')
-            token = get_token(login, password)
+            token, _hash = get_token(login, password)
+            save_token(TOKEN_FILE, token, _hash)
     else:
         print('Getting new token...')
-        token = get_token(login, password)
+        token, _hash = get_token(login, password)
+        save_token(TOKEN_FILE, token, _hash)
     print('Token acquired.')
 
     for d in directories:
         f = os.path.normpath(d)
         print('Processing', f)
-        tracks, cover = process_dir(f)
+        tracks, cover = process_dir(f, recursive)
         if tracks is not None:
             if len(tracks) > 0:
-                upload_tracks(token, tracks, cover)
+                upload_tracks(token, tracks, cover, group_id, hidden)
             else:
                 print(f, 'does not have audio files.')
         else:
@@ -411,25 +414,26 @@ if __name__ == '__main__':
                             help='directories to upload')
         args = parser.parse_args()
 
+        _gid = None
         if args.group:
             if args.group < 0:
-                GROUP_ID = str(args.group)
+                _gid = str(args.group)
             else:
-                GROUP_ID = str(-args.group)
+                _gid = str(-args.group)
         if args.creds:
             CREDENTIALS_FILE = args.creds
         if args.token:
             TOKEN_FILE = args.token
-        RECURSIVE = args.recursive
-        HIDDEN = 1 if args.hidden else 0
+        _rec = args.recursive
+        _hid = 1 if args.hidden else 0
 
         if len(args.dirs) == 0:
             parser.print_help()
         else:
-            main(args.dirs)
+            main(args.dirs, _gid, _hid, _rec)
     except KeyboardInterrupt:
         print('Exiting...')
     finally:
-        for f in _remove:
-            if os.path.exists(f):
-                os.remove(f)
+        for _f in _remove:
+            if os.path.exists(_f):
+                os.remove(_f)
