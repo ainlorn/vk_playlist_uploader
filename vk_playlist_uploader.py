@@ -61,6 +61,9 @@ class Track:
     def get_filename(self):
         return os.path.splitext(os.path.basename(os.path.normpath(self.orig_path)))[0]
 
+    def get_dirname(self):
+        return os.path.basename(os.path.dirname(os.path.normpath(self.orig_path)))
+
     def __eq__(self, b) -> bool:
         return self.path == b.path
 
@@ -71,19 +74,25 @@ class Track:
         if self.album == b.album:
             if self.disc_num == b.disc_num:
                 if self.track_num == b.track_num:
-                    if self.artist == b.artist:
-                        if self.title == b.title:
-                            na = self.get_filename()
-                            nb = b.get_filename()
-                            if na == nb:
+                    na = self.get_filename()
+                    nb = b.get_filename()
+                    if na == nb:
+                        if self.artist == b.artist:
+                            if self.title == b.title:
+                                na = self.get_filename()
+                                nb = b.get_filename()
+                                if na == nb:
+                                    return False
+                                elif na < nb:
+                                    return True
                                 return False
-                            elif na < nb:
+                            elif self.title < b.title:
                                 return True
                             return False
-                        elif self.title < b.title:
+                        elif self.artist < b.artist:
                             return True
                         return False
-                    elif self.artist < b.artist:
+                    elif na < nb:
                         return True
                     return False
                 elif self.track_num < b.track_num:
@@ -100,19 +109,25 @@ class Track:
         if self.album == b.album:
             if self.disc_num == b.disc_num:
                 if self.track_num == b.track_num:
-                    if self.artist == b.artist:
-                        if self.title == b.title:
-                            na = self.get_filename()
-                            nb = b.get_filename()
-                            if na == nb:
+                    na = self.get_filename()
+                    nb = b.get_filename()
+                    if na == nb:
+                        if self.artist == b.artist:
+                            if self.title == b.title:
+                                na = self.get_filename()
+                                nb = b.get_filename()
+                                if na == nb:
+                                    return False
+                                elif na > nb:
+                                    return True
                                 return False
-                            elif na > nb:
+                            elif self.title > b.title:
                                 return True
                             return False
-                        elif self.title > b.title:
+                        elif self.artist > b.artist:
                             return True
                         return False
-                    elif self.artist > b.artist:
+                    elif na > nb:
                         return True
                     return False
                 elif self.track_num > b.track_num:
@@ -330,32 +345,45 @@ def upload_tracks(token, tracks, cover, group_id=None, hidden=0):
     audios.reverse()
     print('Creating playlist', album_title)
     r = vk_request('execute.savePlaylist', token, '5.149', dialog_id=0, playlist_id=0, title=album_title,
-                   description=desc, audio_ids_to_add=','.join(audios), no_discover=hidden, owner_id=owner, func_v=6,
+                   description=desc, no_discover=hidden, owner_id=owner, func_v=6,  # audio_ids_to_add=','.join(audios),
                    save_cover=0)
     if 'error' in r:
         print(r)
         raise Exception('Error creating playlist')
     pid = r['response']['playlist']['id']
 
+    for i in range(0, len(audios), 100):
+        reorder_actions = []
+        for j in audios[i:min(len(audios), i + 100)]:
+            au = j.split('_')
+            reorder_actions.append([int(au[0]), int(au[1]), 0])
+        r = vk_request('execute.savePlaylist', token, '5.149', dialog_id=0, playlist_id=pid, title=album_title,
+                       description=desc, no_discover=hidden, owner_id=owner, func_v=6,
+                       reorder_actions=str(reorder_actions).replace(' ', ''), save_cover=0)
+        if 'error' in r:
+            print(r)
+            raise Exception('Error adding tracks to playlist')
+        # TODO: split playlists > 1000 tracks
+
     if cover:
         print('Uploading cover...')
-        r = vk_request('photos.getAudioPlaylistCoverUploadServer', token, '5.149', playlist_id=pid, owner_id=owner)
-        if 'error' in r:
-            print(r)
-            raise Exception('Error getting cover upload server')
-        upload_url = r['response']['upload_url']
+    r = vk_request('photos.getAudioPlaylistCoverUploadServer', token, '5.149', playlist_id=pid, owner_id=owner)
+    if 'error' in r:
+        print(r)
+        raise Exception('Error getting cover upload server')
+    upload_url = r['response']['upload_url']
 
-        r = vk_upload_file(upload_url, cover, 'photo')
-        if 'error' in r:
-            print(r)
-            raise Exception('Error uploading cover')
-        _hash = r['hash']
-        photo = r['photo']
+    r = vk_upload_file(upload_url, cover, 'photo')
+    if 'error' in r:
+        print(r)
+        raise Exception('Error uploading cover')
+    _hash = r['hash']
+    photo = r['photo']
 
-        r = vk_request('audio.setPlaylistCoverPhoto', token, '5.149', hash=_hash, photo=photo)
-        if 'error' in r:
-            print(r)
-            raise Exception('Error setting album cover')
+    r = vk_request('audio.setPlaylistCoverPhoto', token, '5.149', hash=_hash, photo=photo)
+    if 'error' in r:
+        print(r)
+        raise Exception('Error setting album cover')
 
 
 def main(directories, group_id, hidden, recursive):
